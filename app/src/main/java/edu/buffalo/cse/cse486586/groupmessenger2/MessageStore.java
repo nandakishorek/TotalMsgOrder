@@ -20,7 +20,7 @@ public class MessageStore {
 
     public MessageStore(ContentResolver cr) {
         mContentResolver = cr;
-        mUri = buildUri("content", "edu.buffalo.cse.cse486586.groupmessenger1.provider");
+        mUri = buildUri("content", "edu.buffalo.cse.cse486586.groupmessenger2.provider");
         seqNum = 0L;
     }
 
