@@ -123,7 +123,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
             pw.flush();
 
             mQueue.add(propMsg);
-            Log.v(TAG, "sendBackProposal: Message queued " + msg.toString());
+            Log.v(TAG, "sendBackProposal: Message queued " + propMsg.toString());
             clientSocket.close();
         } catch (IOException ioe) {
             Log.e(TAG, "sendBackProposal: IO error");
