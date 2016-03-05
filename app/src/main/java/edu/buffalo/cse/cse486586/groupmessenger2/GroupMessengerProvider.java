@@ -55,7 +55,6 @@ public class GroupMessengerProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        Log.v("insert", values.toString());
         String key = (String) values.get(KEY_FIELD);
         String val = (String) values.get(VALUE_FIELD);
         try (FileOutputStream fos = getContext().openFileOutput(key, Context.MODE_PRIVATE)) {
@@ -66,7 +65,7 @@ public class GroupMessengerProvider extends ContentProvider {
         } catch (IOException ioe) {
             Log.e(TAG, "Error writing to file - " + key);
         }
-        Log.v("insert", values.toString());
+        Log.v(TAG, "insert " + values.toString());
         return uri;
     }
 
@@ -89,7 +88,7 @@ public class GroupMessengerProvider extends ContentProvider {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(getContext().openFileInput(selection)))) {
             String value = br.readLine();
             cursor.addRow(new String[]{selection, value});
-            Log.v("query", "key - " + selection + "value - " + value);
+            Log.v(TAG, "query key - " + selection + "value - " + value);
         } catch (IOException ioe) {
             Log.e(TAG, "Error while opening file " + selection);
         }
