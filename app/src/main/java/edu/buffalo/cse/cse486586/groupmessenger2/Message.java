@@ -21,7 +21,7 @@ public class Message implements Comparable<Message>{
     private Type type;
     private long majorSeqNum;
     private long minorSeqNum; // for tie breaking
-    private boolean deliverable;
+    private boolean deliverable = false;
 
     public Message(Type type, String message, long majorSeqNum, long minorSeqNum, String id){
         this.type = type;

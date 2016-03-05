@@ -38,7 +38,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
     @Override
     protected Void doInBackground(ServerSocket... sockets) {
 
-        Log.e(TAG, "ServerTask started");
+        Log.v(TAG, "ServerTask started");
         ServerSocket serverSocket = sockets[0];
 
             /*// set the socket timeout to 1s
@@ -56,7 +56,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
                 try{
                     String line = br.readLine();
                     message.append(line);
-                    Log.e(TAG, "Received " + line);
+                    Log.v(TAG, "Received " + line);
                 } catch (IOException ioe) {
                     Log.e(TAG, "Error reading message after accept");
                     ioe.printStackTrace();
@@ -64,21 +64,21 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
                 // parse the received message into a message object
                 Message msg = new Message(message.toString());
-                Log.e(TAG, "Received message " + msg.toString());
+                Log.v(TAG, "Received message " + msg.toString());
                 switch(msg.getType()) {
                     case MSG:
                         sendBackProposal(clientSocket, msg);
                         break;
                     case AGR:
+                        // set the max agreed seq num
+                        mState.setAgreedSeqNum(msg.getMajorSeqNum());
+
                         try {
                             clientSocket.close();
                         } catch (IOException ioe) {
                             Log.e(TAG, "Error while closing the client connection");
                             ioe.printStackTrace();
                         }
-
-                        // set the max agreed seq num
-                        mState.setAgreedSeqNum(msg.getMajorSeqNum());
 
                         // handle the agreement message
                         handleAgreement(msg);
@@ -108,7 +108,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
         Long nextSeqNum = mState.getNextSeqNum();
 
-        Log.e(TAG, "nextSeqNum " + nextSeqNum);
+        Log.v(TAG, "nextSeqNum " + nextSeqNum);
 
         // create a new proposal message
         Message propMsg = new Message(Message.Type.PROP, msg.getMessage(), nextSeqNum, Long.parseLong(mPort), msg.getId());
@@ -122,31 +122,27 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
             // flush the buffers
             pw.flush();
 
-            // set the propsed seq num
-            msg.setMajorSeqNum(nextSeqNum);
-            msg.setMinorSeqNum(Long.parseLong(mPort));
-            msg.setDeliverable(false);
-            mQueue.add(msg);
-            Log.e(TAG, "sendBackProposal: Message queued " + msg.toString());
+            mQueue.add(propMsg);
+            Log.v(TAG, "sendBackProposal: Message queued " + msg.toString());
             clientSocket.close();
         } catch (IOException ioe) {
             Log.e(TAG, "sendBackProposal: IO error");
             ioe.printStackTrace();
         }
 
-        Log.e(TAG, "sendBackProposal Done");
+        Log.v(TAG, "sendBackProposal Done");
     }
 
     void handleAgreement(Message msg) {
 
-        Log.e(TAG, "handleAgreement: " + msg.toString());
+        Log.v(TAG, "handleAgreement: " + msg.toString());
 
         Iterator<Message> iter = mQueue.iterator();
         while(iter.hasNext()) {
             Message message = iter.next();
             if (message.getId().equals(msg.getId())) {
 
-                Log.e(TAG, "Found " + message.toString());
+                Log.v(TAG, "Found " + message.toString());
                 // remove the old one
                 iter.remove();
 
@@ -157,7 +153,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
             }
         }
 
-        Log.e(TAG, "handleAgreement: queue " + mQueue.toString());
+        Log.v(TAG, "handleAgreement: queue " + mQueue.toString());
 
         Message head = mQueue.peek();
         while(head != null && head.isDeliverable()) {

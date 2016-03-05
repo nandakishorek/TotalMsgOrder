@@ -37,6 +37,6 @@ public class MessageStore {
         values.put(VALUE_FIELD, message);
         mContentResolver.insert(mUri, values);
         ++seqNum;
-        Log.e(TAG, "Message " + message + " Seq num " + seqNum);
+        Log.v(TAG, "Message " + message + " Seq num " + seqNum);
     }
 }

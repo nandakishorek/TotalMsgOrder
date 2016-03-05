@@ -54,7 +54,7 @@ public class SendMsgClickListener  implements View.OnClickListener{
         /*// append the message to the text view
         textView.append(message + System.lineSeparator());*/
 
-        Log.e(TAG, "sending " + message);
+        Log.v(TAG, "sending " + message);
         new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, message);
     }
 
@@ -95,21 +95,26 @@ public class SendMsgClickListener  implements View.OnClickListener{
                         pw.flush();
 
                         // read the proposal
-                        StringBuilder message = new StringBuilder();
+                        StringBuilder msgBuilder = new StringBuilder();
                         try {
                             String line = br.readLine();
-                            message.append(line);
-                            Log.e(TAG, "Received proposal " + line);
+                            if (line != null) {
+                                msgBuilder.append(line);
+                            }
+                            Log.v(TAG, "Received proposal " + line);
                         } catch (IOException ioe) {
                             Log.e(TAG, "Error reading proposal");
                             ioe.printStackTrace();
                         }
 
                         // parse the received message into a message object
-                        Message propMsg = new Message(message.toString());
-                        if (propMsg.getMajorSeqNum() > maxMajorSeqNum) {
-                            maxMajorSeqNum = propMsg.getMajorSeqNum();
-                            minorSeqNum = propMsg.getMinorSeqNum();
+                        String message = msgBuilder.toString();
+                        if (message.length() > 0) {
+                            Message propMsg = new Message(message);
+                            if (propMsg.getMajorSeqNum() >= maxMajorSeqNum) {
+                                maxMajorSeqNum = propMsg.getMajorSeqNum();
+                                minorSeqNum = propMsg.getMinorSeqNum();
+                            }
                         }
                     }
                     socket.close();
@@ -121,7 +126,7 @@ public class SendMsgClickListener  implements View.OnClickListener{
                 }
             }
 
-            Log.e(TAG, "Multicast done");
+            Log.v(TAG, "Multicast done");
 
             // set the agreed sequence number in the global state
             mState.setAgreedSeqNum(maxMajorSeqNum);
@@ -154,7 +159,7 @@ public class SendMsgClickListener  implements View.OnClickListener{
                 }
             }
 
-            Log.e(TAG, "Agreement done");
+            Log.v(TAG, "Agreement done");
 
             return null;
         }
