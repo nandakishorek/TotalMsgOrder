@@ -50,6 +50,10 @@ public class GroupMessengerActivity extends Activity {
         findViewById(R.id.button1).setOnClickListener(
                 new OnPTestClickListener(mTextView, getContentResolver()));
 
+        // register click handler for message key test button
+        findViewById(R.id.button2).setOnClickListener(
+                new TestKeys(mTextView, getContentResolver()));
+
         // initialize the node state
         State state = new State();
 
