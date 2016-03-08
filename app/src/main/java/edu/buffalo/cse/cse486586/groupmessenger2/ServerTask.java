@@ -4,9 +4,10 @@ import android.os.AsyncTask;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Iterator;
@@ -41,17 +42,12 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         Log.v(TAG, "ServerTask started");
         ServerSocket serverSocket = sockets[0];
 
-            /*// set the socket timeout to 1s
-            try {
-                serverSocket.setSoTimeout(1000);
-            } catch (SocketException e) {
-                Log.e(TAG, "error setting the server socket timeout");
-            }*/
-
         while (!isCancelled()) {
             try (Socket clientSocket = serverSocket.accept();
                  BufferedReader br = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
             ) {
+                clientSocket.setSoTimeout(500);
+
                 StringBuilder message = new StringBuilder();
                 try{
                     String line = br.readLine();
@@ -113,14 +109,9 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         // create a new proposal message
         Message propMsg = new Message(Message.Type.PROP, msg.getMessage(), nextSeqNum, Long.parseLong(mPort), msg.getId());
 
-        try (PrintWriter pw = new PrintWriter(clientSocket.getOutputStream(), true)) {
-            pw.println(propMsg.toString());
-            if (pw.checkError()) {
-                Log.e(TAG, "Error while sending the message");
-            }
-
-            // flush the buffers
-            pw.flush();
+        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()))) {
+            bw.write(propMsg.toString() + "\n");
+            bw.flush();
 
             mQueue.add(propMsg);
             Log.v(TAG, "sendBackProposal: Message queued " + propMsg.toString());

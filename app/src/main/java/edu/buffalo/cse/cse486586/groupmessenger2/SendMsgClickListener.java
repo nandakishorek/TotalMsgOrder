@@ -7,15 +7,12 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 import java.io.BufferedReader;
-import java.io.FileOutputStream;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
 import java.net.UnknownHostException;
 
 /**
@@ -83,16 +80,13 @@ public class SendMsgClickListener  implements View.OnClickListener{
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             Integer.parseInt(port));
 
-                    try (PrintWriter pw = new PrintWriter(socket.getOutputStream(), true);
+                    socket.setSoTimeout(500);
+
+                    try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
                          BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                     ) {
-                        pw.println(msg.toString());
-                        if (pw.checkError()) {
-                            Log.e(TAG, "Error while sending the message");
-                        }
-
-                        // flush the buffers
-                        pw.flush();
+                        bw.write(msg.toString() + "\n");
+                        bw.flush();
 
                         // read the proposal
                         StringBuilder msgBuilder = new StringBuilder();
@@ -116,6 +110,9 @@ public class SendMsgClickListener  implements View.OnClickListener{
                                 minorSeqNum = propMsg.getMinorSeqNum();
                             }
                         }
+                    } catch (IOException ioe) {
+                        Log.e(TAG, "Error writing to socket");
+                        ioe.printStackTrace();
                     }
                     socket.close();
 
@@ -144,14 +141,18 @@ public class SendMsgClickListener  implements View.OnClickListener{
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             Integer.parseInt(port));
 
-                    try (PrintWriter pw = new PrintWriter(socket.getOutputStream(), true)) {
-                        pw.println(msg.toString());
-                        if (pw.checkError()) {
-                            Log.e(TAG, "Error while sending the message");
-                        }
+                    socket.setSoTimeout(500);
+
+                    try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()))) {
+                        bw.write(msg.toString() + "\n");
+                        bw.flush();
+                    } catch (IOException ioe) {
+                        Log.e(TAG, "Error while sending the message");
+                        ioe.printStackTrace();
                     }
                     socket.close();
 
+                    Log.v(TAG, "Multicast port: " + port + " message" + msg);
                 } catch (UnknownHostException e) {
                     Log.e(TAG, "ClientTask UnknownHostException - " + e.getMessage());
                 } catch (IOException e) {
