@@ -14,8 +14,10 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -32,17 +34,24 @@ public class SendMsgClickListener  implements View.OnClickListener{
     private String mPort; // the port of this client for generating a unique id for a message
 
     private long mIdSuffix = 1L; // suffix for generating the id of a message
+    private LinkedBlockingQueue<String> inputMsgQ = new LinkedBlockingQueue<>();
 
     // handle to node state
     private State mState;
 
-    private ExecutorService execService = Executors.newSingleThreadExecutor();
+    // flag set when all the connections have been opened
+    private boolean mIsConReady;
+
+    private Socket[] peerSockets = new Socket[REMOTE_PORTS.length];
+    private BufferedReader[] in = new BufferedReader[REMOTE_PORTS.length];
+    private BufferedWriter[] out = new BufferedWriter[REMOTE_PORTS.length];
 
     public SendMsgClickListener(EditText editText, TextView textView, State state, String myPort) {
         this.editText = editText;
         this.textView = textView;
         this.mState = state;
         this.mPort = myPort;
+        new Thread(new MessageSender()).start();
     }
 
     @Override
@@ -53,43 +62,72 @@ public class SendMsgClickListener  implements View.OnClickListener{
         // clear the editor
         editText.getText().clear();
 
-        /*// append the message to the text view
-        textView.append(message + System.lineSeparator());*/
+        try {
+            inputMsgQ.put(message);
+            Log.v(TAG, "Queued " + message);
+        } catch (InterruptedException e) {
+            Log.e(TAG, "interrupted");
+            e.printStackTrace();
+        }
+    }
 
-        Log.v(TAG, "sending " + message);
-        //new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, message);
-        execService.submit(new Runnable() {
-            @Override
-            public void run() {
-                // construct a message to be sent to the other clients
-                Message msg = new Message(Message.Type.MSG, message, 0, Long.parseLong(mPort), mPort + mIdSuffix);
+    private void openConnections() {
+        if (!mIsConReady) {
+            // open connections to other peers
+            for (int i = 0; i < REMOTE_PORTS.length; ++i) {
+                try {
+                    peerSockets[i] = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                            Integer.parseInt(REMOTE_PORTS[i]));
 
-                // increment the id suffix
-                ++mIdSuffix;
+                    //peerSockets[i].setSoTimeout(500);
+                    peerSockets[i].setSoLinger(true, 0);
 
-                // multicast the message
-                // get the proposed seq numbers back
-                long maxMajorSeqNum = 0L;
-                long minorSeqNum = 0L; // corresponsing minor num
+                    out[i] = new BufferedWriter(new OutputStreamWriter(peerSockets[i].getOutputStream()));
+                    in[i] = new BufferedReader(new InputStreamReader(peerSockets[i].getInputStream()));
 
-                Socket[] peerSockets = new Socket[REMOTE_PORTS.length];
-                BufferedReader[] in = new BufferedReader[REMOTE_PORTS.length];
-                BufferedWriter[] out = new BufferedWriter[REMOTE_PORTS.length];
+                    // send this AVD's listen port
+                    Message msg = new Message(Message.Type.ID, mPort, 0, Long.parseLong(mPort), mPort + mIdSuffix);
+                    out[i].write(msg.toString() + "\n");
+                    out[i].flush();
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "MessageSender UnknownHostException - " + e.getMessage());
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    Log.e(TAG, "MessageSender socket IOException - " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+            mIsConReady = true;
+        }
+    }
 
-                for (int i =0; i < REMOTE_PORTS.length; ++i) {
-                    try {
+    private class MessageSender implements Runnable{
 
-                        // TODO: socket timeout for handling failures
-                        peerSockets[i] = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
-                                Integer.parseInt(REMOTE_PORTS[i]));
+        @Override
+        public void run() {
+            // now keep dequeuing messages and sending them
+            while(true) {
+                try {
+                    // get a message from the input buffer
+                    String message = inputMsgQ.take();
+                    Log.v(TAG, "Dequeued " + message);
 
-                        //peerSockets[i].setSoTimeout(500);
-                        peerSockets[i].setSoLinger(true, 0);
+                    // establish connections if haven't already
+                    openConnections();
 
+                    // construct a message to be sent to the other clients
+                    Message msg = new Message(Message.Type.MSG, message, 0, Long.parseLong(mPort), mPort + mIdSuffix);
+
+                    // increment the id suffix
+                    ++mIdSuffix;
+
+                    // multicast the message
+                    // get the proposed seq numbers back
+                    long maxMajorSeqNum = 0L;
+                    long minorSeqNum = 0L; // corresponsing minor num
+
+                    for (int i =0; i < REMOTE_PORTS.length; ++i) {
                         try {
-                            out[i] = new BufferedWriter(new OutputStreamWriter(peerSockets[i].getOutputStream()));
-                            in[i] = new BufferedReader(new InputStreamReader(peerSockets[i].getInputStream()));
-
                             out[i].write(msg.toString() + "\n");
                             out[i].flush();
 
@@ -117,40 +155,33 @@ public class SendMsgClickListener  implements View.OnClickListener{
                             Log.e(TAG, "Error writing to socket");
                             ioe.printStackTrace();
                         }
-
-                    } catch (UnknownHostException e) {
-                        Log.e(TAG, "ClientTask UnknownHostException - " + e.getMessage());
-                    } catch (IOException e) {
-                        Log.e(TAG, "ClientTask socket IOException - " + e.getMessage());
                     }
-                }
 
-                Log.v(TAG, "Multicast done");
+                    Log.v(TAG, "Multicast done");
 
-                // set the agreed sequence number in this major
-                msg.setMajorSeqNum(maxMajorSeqNum);
-                msg.setMinorSeqNum(minorSeqNum);
-                msg.setType(Message.Type.AGR);
+                    // set the agreed sequence number in this major
+                    msg.setMajorSeqNum(maxMajorSeqNum);
+                    msg.setMinorSeqNum(minorSeqNum);
+                    msg.setType(Message.Type.AGR);
 
-                // multicast the agreed sequence number
-                for (int i = 0; i < REMOTE_PORTS.length; ++i) {
-                    try {
-                        out[i].write(msg.toString() + "\n");
-                        out[i].flush();
-
-                        // close connections
-                        out[i].close();
-                        in[i].close();
-
-                        Log.v(TAG, "Multicast port: " + REMOTE_PORTS[i] + " message" + msg);
-                    } catch (IOException ioe) {
-                        Log.e(TAG, "Error while sending the message");
-                        ioe.printStackTrace();
+                    // multicast the agreed sequence number
+                    for (int i = 0; i < REMOTE_PORTS.length; ++i) {
+                        try {
+                            out[i].write(msg.toString() + "\n");
+                            out[i].flush();
+                            Log.v(TAG, "Multicast port: " + REMOTE_PORTS[i] + " message" + msg);
+                        } catch (IOException ioe) {
+                            Log.e(TAG, "Error while sending the message");
+                            ioe.printStackTrace();
+                        }
                     }
-                }
 
-                Log.v(TAG, "Agreement done");
+                    Log.v(TAG, "Agreement done");
+                } catch (InterruptedException e) {
+                    Log.e(TAG, "interrupted in the loop");
+                    e.printStackTrace();
+                }
             }
-        });
+        }
     }
 }

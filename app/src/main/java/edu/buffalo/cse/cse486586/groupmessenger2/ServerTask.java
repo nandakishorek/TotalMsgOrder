@@ -27,8 +27,6 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
     private String mPort; // the port of this client for generating a unique id for a message
 
-    private String mListenPort; // the listen port of the client which has connected now
-
     public ServerTask(State state, String myPort) {
         this.mState = state;
         this.mPort = myPort;
@@ -41,18 +39,37 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         ServerSocket serverSocket = sockets[0];
 
         while (!isCancelled()) {
-            try (Socket clientSocket = serverSocket.accept();
-                 BufferedReader br = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                 BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
-            ) {
-                //clientSocket.setSoTimeout(500);
-                clientSocket.setSoLinger(true, 0);
+            try {
 
-                // receive message and send back proposal
-                receiveMessage(clientSocket, br, bw);
+                final Socket clientSocket = serverSocket.accept();
+                final BufferedReader br = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                final BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
 
-                // receive the message with the agreed seq num
-                receiveMessage(clientSocket, br, bw);
+                Log.v(TAG, "New Worker thread");
+
+                // delegate work to worker thread
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            //clientSocket.setSoTimeout(500);
+                            clientSocket.setSoLinger(true, 0);
+
+                            String listenPort = receiveMessage(clientSocket, br, bw, null); // the listen port of the client which has connected now
+
+                            while(true) {
+                                // receive message and send back proposal
+                                receiveMessage(clientSocket, br, bw, listenPort);
+
+                                // receive the message with the agreed seq num
+                                receiveMessage(clientSocket, br, bw, listenPort);
+                            }
+                        } catch (IOException ioe) {
+                            Log.e(TAG, "Error in server thread");
+                            ioe.printStackTrace();
+                        }
+                    }
+                }).start();
             } catch (IOException e) {
                 e.printStackTrace();
                 Log.e(TAG, "Error while accepting the client connection");
@@ -68,7 +85,17 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         return null;
     }
 
-    void receiveMessage(Socket clientSocket, BufferedReader br, BufferedWriter bw) {
+    /**
+     * Method to process client message
+     *
+     * @param clientSocket
+     * @param br
+     * @param bw
+     * @param clientPort client's listen port, incase of failure all message from this client will be removed
+     * @return
+     */
+    String receiveMessage(Socket clientSocket, BufferedReader br, BufferedWriter bw, String clientPort) {
+        String listenPort = null;
         try{
             String line = br.readLine();
             Log.v(TAG, "Received " + line);
@@ -76,11 +103,11 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
                 // parse the received message into a message object
                 Message msg = new Message(line);
 
-                // add the port to listen port mapping
-                mListenPort = msg.getId().substring(0, 5);
-
                 Log.v(TAG, "Received message " + msg.toString());
                 switch (msg.getType()) {
+                    case ID:
+                        listenPort = msg.getMessage();
+                        break;
                     case MSG:
                         sendBackProposal(bw, msg);
                         break;
@@ -97,17 +124,23 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
                         break;
                 }
             } else {
-                if (mListenPort != null) {
-                    mState.cleanUp(mListenPort);
-                    mListenPort = null;
+                if (clientPort != null) {
+                    mState.cleanUp(clientPort);
                 }
             }
         } catch (IOException ioe) {
             Log.e(TAG, "Error reading message after accept");
             ioe.printStackTrace();
         }
+        return listenPort;
     }
 
+    /**
+     * Method to send proposal back to sender
+     *
+     * @param bw
+     * @param msg Incoming new message
+     */
     void sendBackProposal(BufferedWriter bw, Message msg) {
 
         Long nextSeqNum = mState.getNextSeqNum();

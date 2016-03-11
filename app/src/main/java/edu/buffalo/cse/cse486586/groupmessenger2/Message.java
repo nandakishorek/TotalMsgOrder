@@ -14,7 +14,7 @@ public class Message implements Comparable<Message>{
     private static final String DELIM = "|";
 
     // message type message, proposal, agreement
-    public enum Type {MSG, PROP, AGR};
+    public enum Type {MSG, PROP, AGR, ID};
 
     private String message;
     private String id; // message identifier

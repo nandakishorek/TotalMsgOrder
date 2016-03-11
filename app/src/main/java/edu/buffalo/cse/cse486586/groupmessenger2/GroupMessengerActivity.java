@@ -63,7 +63,7 @@ public class GroupMessengerActivity extends Activity {
 
         // start the server thread
         try {
-            ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
+            ServerSocket serverSocket = new ServerSocket(SERVER_PORT, 5);
             mServerTask = new ServerTask(state, myPort);
             mServerTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
         } catch (IOException e) {
