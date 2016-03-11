@@ -155,22 +155,25 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
      */
     void sendBackProposal(BufferedWriter bw, Message msg) {
 
-        Long nextSeqNum = mState.getNextSeqNum();
+        // to avoid condition where we send proposal back and before queuing an agreement comes in
+        synchronized (mState) {
+            Long nextSeqNum = mState.getNextSeqNum();
 
-        Log.v(TAG, "nextSeqNum " + nextSeqNum);
+            Log.v(TAG, "nextSeqNum " + nextSeqNum);
 
-        // create a new proposal message
-        Message propMsg = new Message(Message.Type.PROP, msg.getMessage(), nextSeqNum, Long.parseLong(mPort), msg.getId());
+            // create a new proposal message
+            Message propMsg = new Message(Message.Type.PROP, msg.getMessage(), nextSeqNum, Long.parseLong(mPort), msg.getId());
 
-        try {
-            bw.write(propMsg.toString() + "\n");
-            bw.flush();
+            try {
+                bw.write(propMsg.toString() + "\n");
+                bw.flush();
 
-            mState.add(propMsg);
-            Log.v(TAG, "sendBackProposal: Message queued " + propMsg.toString());
-        } catch (IOException ioe) {
-            Log.e(TAG, "sendBackProposal: IO error");
-            ioe.printStackTrace();
+                mState.add(propMsg);
+                Log.v(TAG, "sendBackProposal: Message queued " + propMsg.toString());
+            } catch (IOException ioe) {
+                Log.e(TAG, "sendBackProposal: IO error");
+                ioe.printStackTrace();
+            }
         }
 
         Log.v(TAG, "sendBackProposal Done");
