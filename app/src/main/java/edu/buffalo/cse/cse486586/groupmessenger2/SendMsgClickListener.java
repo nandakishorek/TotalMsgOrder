@@ -153,17 +153,4 @@ public class SendMsgClickListener  implements View.OnClickListener{
             }
         });
     }
-
-    private class ClientTask extends AsyncTask<String, Void, Void> {
-
-        @Override
-        protected Void doInBackground(String... msgs) {
-
-            String msgToSend = msgs[0];
-
-
-
-            return null;
-        }
-    }
 }
