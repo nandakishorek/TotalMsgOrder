@@ -55,7 +55,7 @@ public class GroupMessengerActivity extends Activity {
                 new TestKeys(mTextView, getContentResolver()));
 
         // initialize the node state
-        State state = new State();
+        State state = new State(new MessageStore(getContentResolver()));
 
         // register click handler for sending the typed message
         EditText editText = (EditText)findViewById(R.id.editText1);
@@ -64,7 +64,7 @@ public class GroupMessengerActivity extends Activity {
         // start the server thread
         try {
             ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
-            mServerTask = new ServerTask(new MessageStore(getContentResolver()), state, myPort);
+            mServerTask = new ServerTask(state, myPort);
             mServerTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
         } catch (IOException e) {
             Log.e(TAG, "Can't create a ServerSocket - " + e.getMessage());

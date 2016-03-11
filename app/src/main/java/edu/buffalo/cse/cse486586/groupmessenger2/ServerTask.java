@@ -10,7 +10,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
@@ -19,21 +21,17 @@ import java.util.PriorityQueue;
 public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
     private static final String TAG = ServerTask.class.getSimpleName();
-    private MessageStore mMsgStore;
 
     // handle to node state
     private State mState;
 
     private String mPort; // the port of this client for generating a unique id for a message
 
-    // message buffer
-    private PriorityQueue<Message> mQueue;
+    private String mListenPort; // the listen port of the client which has connected now
 
-    public ServerTask(MessageStore msgStore, State state, String myPort) {
-        this.mMsgStore = msgStore;
+    public ServerTask(State state, String myPort) {
         this.mState = state;
         this.mPort = myPort;
-        this.mQueue = new PriorityQueue<Message>();
     }
 
     @Override
@@ -45,45 +43,16 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         while (!isCancelled()) {
             try (Socket clientSocket = serverSocket.accept();
                  BufferedReader br = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                 BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
             ) {
-                clientSocket.setSoTimeout(500);
+                //clientSocket.setSoTimeout(500);
+                clientSocket.setSoLinger(true, 0);
 
-                StringBuilder message = new StringBuilder();
-                try{
-                    String line = br.readLine();
-                    message.append(line);
-                    Log.v(TAG, "Received " + line);
-                } catch (IOException ioe) {
-                    Log.e(TAG, "Error reading message after accept");
-                    ioe.printStackTrace();
-                }
+                // receive message and send back proposal
+                receiveMessage(clientSocket, br, bw);
 
-                // parse the received message into a message object
-                Message msg = new Message(message.toString());
-                Log.v(TAG, "Received message " + msg.toString());
-                switch(msg.getType()) {
-                    case MSG:
-                        sendBackProposal(clientSocket, msg);
-                        break;
-                    case AGR:
-                        // set the max agreed seq num
-                        mState.setAgreedSeqNum(msg.getMajorSeqNum());
-
-                        try {
-                            clientSocket.close();
-                        } catch (IOException ioe) {
-                            Log.e(TAG, "Error while closing the client connection");
-                            ioe.printStackTrace();
-                        }
-
-                        // handle the agreement message
-                        handleAgreement(msg);
-                        break;
-                    case PROP:
-                    default:
-                        Log.e(TAG, "invalid message type " + msg.getType());
-                        break;
-                }
+                // receive the message with the agreed seq num
+                receiveMessage(clientSocket, br, bw);
             } catch (IOException e) {
                 e.printStackTrace();
                 Log.e(TAG, "Error while accepting the client connection");
@@ -99,8 +68,47 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         return null;
     }
 
+    void receiveMessage(Socket clientSocket, BufferedReader br, BufferedWriter bw) {
+        try{
+            String line = br.readLine();
+            Log.v(TAG, "Received " + line);
+            if(line != null && line.length() > 0) {
+                // parse the received message into a message object
+                Message msg = new Message(line);
 
-    void sendBackProposal(Socket clientSocket, Message msg) {
+                // add the port to listen port mapping
+                mListenPort = msg.getId().substring(0, 5);
+
+                Log.v(TAG, "Received message " + msg.toString());
+                switch (msg.getType()) {
+                    case MSG:
+                        sendBackProposal(bw, msg);
+                        break;
+                    case AGR:
+                        // set the max agreed seq num
+                        mState.setAgreedSeqNum(msg.getMajorSeqNum());
+
+                        // handle the agreement message
+                        mState.handleAgreement(msg);
+                        break;
+                    case PROP:
+                    default:
+                        Log.e(TAG, "invalid message type " + msg.getType());
+                        break;
+                }
+            } else {
+                if (mListenPort != null) {
+                    mState.cleanUp(mListenPort);
+                    mListenPort = null;
+                }
+            }
+        } catch (IOException ioe) {
+            Log.e(TAG, "Error reading message after accept");
+            ioe.printStackTrace();
+        }
+    }
+
+    void sendBackProposal(BufferedWriter bw, Message msg) {
 
         Long nextSeqNum = mState.getNextSeqNum();
 
@@ -109,13 +117,12 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         // create a new proposal message
         Message propMsg = new Message(Message.Type.PROP, msg.getMessage(), nextSeqNum, Long.parseLong(mPort), msg.getId());
 
-        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()))) {
+        try {
             bw.write(propMsg.toString() + "\n");
             bw.flush();
 
-            mQueue.add(propMsg);
+            mState.add(propMsg);
             Log.v(TAG, "sendBackProposal: Message queued " + propMsg.toString());
-            clientSocket.close();
         } catch (IOException ioe) {
             Log.e(TAG, "sendBackProposal: IO error");
             ioe.printStackTrace();
@@ -124,34 +131,5 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
         Log.v(TAG, "sendBackProposal Done");
     }
 
-    void handleAgreement(Message msg) {
 
-        Log.v(TAG, "handleAgreement: " + msg.toString());
-
-        Iterator<Message> iter = mQueue.iterator();
-        while(iter.hasNext()) {
-            Message message = iter.next();
-            if (message.getId().equals(msg.getId())) {
-
-                Log.v(TAG, "Found " + message.toString());
-                // remove the old one
-                iter.remove();
-
-                // add the new one
-                msg.setDeliverable(true);
-                mQueue.add(msg);
-                break;
-            }
-        }
-
-        Log.v(TAG, "handleAgreement: queue " + mQueue.toString());
-
-        Message head = mQueue.peek();
-        while(head != null && head.isDeliverable()) {
-            // there is a deliverable message at the head, deliver it
-            head = mQueue.poll();
-            mMsgStore.storeMessage(head.getMessage());
-            head = mQueue.peek();
-        }
-    }
 }
