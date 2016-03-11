@@ -14,6 +14,10 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,15 +46,20 @@ public class SendMsgClickListener  implements View.OnClickListener{
     // flag set when all the connections have been opened
     private boolean mIsConReady;
 
-    private Socket[] peerSockets = new Socket[REMOTE_PORTS.length];
-    private BufferedReader[] in = new BufferedReader[REMOTE_PORTS.length];
-    private BufferedWriter[] out = new BufferedWriter[REMOTE_PORTS.length];
+    private List<Socket> peerSockets = new ArrayList<>();
+    private List<BufferedReader> in = new ArrayList<>();
+    private List<BufferedWriter> out = new ArrayList<>();
+
+    private List<String> mPeers;
 
     public SendMsgClickListener(EditText editText, TextView textView, State state, String myPort) {
         this.editText = editText;
         this.textView = textView;
         this.mState = state;
         this.mPort = myPort;
+
+        mPeers = new ArrayList<>();
+        mPeers.addAll(Arrays.asList(REMOTE_PORTS));
         new Thread(new MessageSender()).start();
     }
 
@@ -74,21 +83,23 @@ public class SendMsgClickListener  implements View.OnClickListener{
     private void openConnections() {
         if (!mIsConReady) {
             // open connections to other peers
-            for (int i = 0; i < REMOTE_PORTS.length; ++i) {
+            int i = 0;
+            Iterator<String> iter = mPeers.iterator();
+            while(iter.hasNext()) {
+                String port = iter.next();
                 try {
-                    peerSockets[i] = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
-                            Integer.parseInt(REMOTE_PORTS[i]));
+                    peerSockets.add(new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                            Integer.parseInt(port)));
 
-                    //peerSockets[i].setSoTimeout(500);
-                    peerSockets[i].setSoLinger(true, 0);
+                    peerSockets.get(i).setSoLinger(true, 0);
 
-                    out[i] = new BufferedWriter(new OutputStreamWriter(peerSockets[i].getOutputStream()));
-                    in[i] = new BufferedReader(new InputStreamReader(peerSockets[i].getInputStream()));
+                    out.add(new BufferedWriter(new OutputStreamWriter(peerSockets.get(i).getOutputStream())));
+                    in.add(new BufferedReader(new InputStreamReader(peerSockets.get(i).getInputStream())));
 
                     // send this AVD's listen port
                     Message msg = new Message(Message.Type.ID, mPort, 0, Long.parseLong(mPort), mPort + mIdSuffix);
-                    out[i].write(msg.toString() + "\n");
-                    out[i].flush();
+                    out.get(i).write(msg.toString() + "\n");
+                    out.get(i).flush();
                 } catch (UnknownHostException e) {
                     Log.e(TAG, "MessageSender UnknownHostException - " + e.getMessage());
                     e.printStackTrace();
@@ -96,11 +107,28 @@ public class SendMsgClickListener  implements View.OnClickListener{
                     Log.e(TAG, "MessageSender socket IOException - " + e.getMessage());
                     e.printStackTrace();
                 }
+                ++i;
             }
             mIsConReady = true;
         }
     }
 
+    /**
+     * Method to remove a peer
+     */
+    private void removePeer(String peerPort, int i) {
+        try {
+            mState.cleanUp(peerPort);
+            out.get(i).close();
+            out.remove(i);
+            in.get(i).close();
+            in.remove(i);
+            Log.v(TAG, "removePeer: " + peerPort + " i " + i);
+        } catch (IOException ioe) {
+            Log.e(TAG, "removePeer: error while closing");
+            ioe.printStackTrace();
+        }
+    }
     private class MessageSender implements Runnable{
 
         @Override
@@ -126,13 +154,16 @@ public class SendMsgClickListener  implements View.OnClickListener{
                     long maxMajorSeqNum = 0L;
                     long minorSeqNum = 0L; // corresponsing minor num
 
-                    for (int i =0; i < REMOTE_PORTS.length; ++i) {
+                    int i = 0;
+                    Iterator<String> iter = mPeers.iterator();
+                    while(iter.hasNext()) {
+                        String port = iter.next();
                         try {
-                            out[i].write(msg.toString() + "\n");
-                            out[i].flush();
+                            out.get(i).write(msg.toString() + "\n");
+                            out.get(i).flush();
 
                             try {
-                                String line = in[i].readLine();
+                                String line = in.get(i).readLine();
                                 if (line != null && line.length() > 0) {
                                     // parse the received message into a message object
                                     Message propMsg = new Message(line);
@@ -140,20 +171,25 @@ public class SendMsgClickListener  implements View.OnClickListener{
                                         maxMajorSeqNum = propMsg.getMajorSeqNum();
                                         minorSeqNum = propMsg.getMinorSeqNum();
                                     }
-
+                                    ++i;
                                 } else {
                                     // clean up
-                                    mState.cleanUp(REMOTE_PORTS[i]);
+                                    iter.remove();
+                                    removePeer(port, i);
                                 }
                                 Log.v(TAG, "Received proposal " + line);
                             } catch (IOException ioe) {
                                 Log.e(TAG, "Error reading proposal");
                                 ioe.printStackTrace();
+                                iter.remove();
+                                removePeer(port, i);
                             }
 
                         } catch (IOException ioe) {
                             Log.e(TAG, "Error writing to socket");
                             ioe.printStackTrace();
+                            iter.remove();
+                            removePeer(port, i);
                         }
                     }
 
@@ -165,14 +201,20 @@ public class SendMsgClickListener  implements View.OnClickListener{
                     msg.setType(Message.Type.AGR);
 
                     // multicast the agreed sequence number
-                    for (int i = 0; i < REMOTE_PORTS.length; ++i) {
+                    i = 0;
+                    iter = mPeers.iterator();
+                    while (iter.hasNext()){
+                        String port = iter.next();
                         try {
-                            out[i].write(msg.toString() + "\n");
-                            out[i].flush();
-                            Log.v(TAG, "Multicast port: " + REMOTE_PORTS[i] + " message" + msg);
+                            out.get(i).write(msg.toString() + "\n");
+                            out.get(i).flush();
+                            Log.v(TAG, "Multicast port: " + port + " message" + msg);
+                            ++i;
                         } catch (IOException ioe) {
                             Log.e(TAG, "Error while sending the message");
                             ioe.printStackTrace();
+                            iter.remove();
+                            removePeer(port, i);
                         }
                     }
 

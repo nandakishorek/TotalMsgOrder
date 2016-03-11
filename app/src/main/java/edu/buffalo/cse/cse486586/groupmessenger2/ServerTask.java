@@ -59,11 +59,21 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
 
                             while(true) {
                                 // receive message and send back proposal
-                                receiveMessage(clientSocket, br, bw, listenPort);
+                                if(receiveMessage(clientSocket, br, bw, listenPort) == null) {
+                                    // quit
+                                    Log.e(TAG, "client connection closed " + listenPort);
+                                    break;
+                                }
 
                                 // receive the message with the agreed seq num
-                                receiveMessage(clientSocket, br, bw, listenPort);
+                                if(receiveMessage(clientSocket, br, bw, listenPort) == null)  {
+                                    // quit
+                                    Log.e(TAG, "client connection closed " + listenPort);
+                                    break;
+                                }
                             }
+                            br.close();
+                            bw.close();
                         } catch (IOException ioe) {
                             Log.e(TAG, "Error in server thread");
                             ioe.printStackTrace();
@@ -95,7 +105,7 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
      * @return
      */
     String receiveMessage(Socket clientSocket, BufferedReader br, BufferedWriter bw, String clientPort) {
-        String listenPort = null;
+        String listenPort = "";
         try{
             String line = br.readLine();
             Log.v(TAG, "Received " + line);
@@ -125,7 +135,9 @@ public class ServerTask extends AsyncTask<ServerSocket, String, Void> {
                 }
             } else {
                 if (clientPort != null) {
+                    // cleanup
                     mState.cleanUp(clientPort);
+                    return null;
                 }
             }
         } catch (IOException ioe) {
